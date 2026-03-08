@@ -45,13 +45,6 @@ public class GameManager : MonoBehaviour
     private BlockSpawnController spawnController;
     private MapGenerator mapGenerator;
     
-    [Header("Performance Optimization")]
-    private Dictionary<string, List<Vector2Int>> _blockPlacementCache = new Dictionary<string, List<Vector2Int>>();
-    private string _lastGridHash = "";
-    private bool _isCheckingGameOver = false;
-    private Coroutine _deferredGameOverCheck;
-    private Coroutine _deferredSpawnRoutine;
-
     void Awake()
     {
         // Singleton pattern
@@ -108,19 +101,6 @@ public class GameManager : MonoBehaviour
     
     // Generate initial random map
     private void GenerateInitialMap()
-    {
-        if (mapGenerator != null)
-        {
-            // Delay một chút để đảm bảo GridView đã khởi tạo hoàn toàn
-            Invoke("DelayedGenerateMap", 0.1f);
-        }
-        else
-        {
-        }
-    }
-    
-    // Delayed map generation
-    private void DelayedGenerateMap()
     {
         if (mapGenerator != null)
         {
@@ -277,203 +257,48 @@ public class GameManager : MonoBehaviour
         return currentScore;
     }
 
-    // OPTIMIZED: Kiểm tra game over với caching và early exit
-    private void CheckGameOverOptimized()
-    {
-        if (isGameOver) return;
-
-        // Lấy tất cả blocks hiện tại trong spawn area
-        if (spawnController != null)
-        {
-            bool canPlaceAnyBlock = false;
-            
-            // Update placement cache if grid changed
-            UpdatePlacementCache();
-
-            // Kiểm tra mỗi block trong spawn area với cached results
-            foreach (Transform blockTransform in spawnController.transform)
-            {
-                DragBlockController dragController = blockTransform.GetComponent<DragBlockController>();
-                if (dragController != null && dragController.BlockData != null)
-                {
-                    // Sử dụng cached placement check
-                    if (CanPlaceBlockAnywhereOptimized(dragController.BlockData))
-                    {
-                        canPlaceAnyBlock = true;
-                        break;
-                    }
-                }
-            }
-
-            // Nếu không thể đặt block nào -> Game Over
-            if (!canPlaceAnyBlock)
-            {
-                TriggerGameOver();
-            }
-        }
-    }
-    
-    // Legacy method for compatibility
     public void CheckGameOver()
     {
-        CheckGameOverOptimized();
+        if (isGameOver || gridView == null || spawnController == null) return;
+
+        // Nếu không còn block nào trong khu spawn, tạo mới rồi kiểm tra các block mới
+        if (spawnController.transform.childCount == 0)
+        {
+            spawnController.SpawnNewBlocks();
+        }
+
+        foreach (Transform blockTransform in spawnController.transform)
+        {
+            var dragController = blockTransform.GetComponent<DragBlockController>();
+            if (dragController != null && dragController.BlockData != null)
+            {
+                if (CanPlaceBlockAnywhere(dragController.BlockData))
+                {
+                    return; // Vẫn còn chỗ đặt => tiếp tục chơi
+                }
+            }
+        }
+
+        TriggerGameOver();
     }
 
-    // OPTIMIZED: Kiểm tra xem có thể đặt block ở bất kỳ vị trí nào không với caching
-    private bool CanPlaceBlockAnywhereOptimized(BlockData block)
+    private bool CanPlaceBlockAnywhere(BlockData block)
     {
-        if (gridView == null) return false;
-        
-        // Tạo hash cho block shape
-        string blockHash = GetBlockHash(block);
-        
-        // Check cache first
-        if (_blockPlacementCache.ContainsKey(blockHash))
+        if (gridView == null || block == null) return false;
+
+        int size = gridView.GridSize;
+        for (int x = 0; x < size; x++)
         {
-            var validPositions = _blockPlacementCache[blockHash];
-            if (validPositions.Count > 0)
+            for (int y = 0; y < size; y++)
             {
-                // Verify first cached position is still valid
-                var firstPos = validPositions[0];
-                if (gridView.CanPlace(block, firstPos.x, firstPos.y))
+                if (gridView.CanPlace(block, x, y))
                 {
                     return true;
                 }
-                else
-                {
-                    // Cache invalid, remove and recalculate
-                    _blockPlacementCache.Remove(blockHash);
-                }
             }
         }
-        
-        // If not in cache or cache invalid, calculate with early exit
-        List<Vector2Int> calculatedPositions = new List<Vector2Int>();
-        
-        // Smart scanning: prioritize center and edges first
-        var scanOrder = GetSmartScanOrder();
-        
-        foreach (var pos in scanOrder)
-        {
-            if (gridView.CanPlace(block, pos.x, pos.y))
-            {
-                calculatedPositions.Add(pos);
-                // Early exit after finding first valid position
-                if (calculatedPositions.Count >= 3) // Cache first 3 valid positions
-                {
-                    break;
-                }
-            }
-        }
-        
-        // Cache results
-        _blockPlacementCache[blockHash] = calculatedPositions;
-        
-        return calculatedPositions.Count > 0;
-    }
-    
-    // Legacy method for compatibility
-    private bool CanPlaceBlockAnywhere(BlockData block)
-    {
-        return CanPlaceBlockAnywhereOptimized(block);
-    }
-    
-    /// <summary>
-    /// Create hash for block shape to enable caching
-    /// </summary>
-    private string GetBlockHash(BlockData block)
-    {
-        if (block == null || block.mask == null) return "empty";
-        
-        System.Text.StringBuilder sb = new System.Text.StringBuilder();
-        for (int i = 0; i < 5; i++)
-        {
-            for (int j = 0; j < 5; j++)
-            {
-                sb.Append(block.mask[i, j]);
-            }
-        }
-        return sb.ToString();
-    }
-    
-    /// <summary>
-    /// Smart scan order: prioritize center and edges for faster placement
-    /// </summary>
-    private List<Vector2Int> GetSmartScanOrder()
-    {
-        List<Vector2Int> order = new List<Vector2Int>();
-        int gridSize = gridView.GridSize;
-        int center = gridSize / 2;
-        
-        // Add center positions first
-        for (int x = center - 1; x <= center + 1; x++)
-        {
-            for (int y = center - 1; y <= center + 1; y++)
-            {
-                if (x >= 0 && x < gridSize && y >= 0 && y < gridSize)
-                {
-                    order.Add(new Vector2Int(x, y));
-                }
-            }
-        }
-        
-        // Add edges
-        for (int i = 0; i < gridSize; i++)
-        {
-            order.Add(new Vector2Int(i, 0)); // Bottom
-            order.Add(new Vector2Int(i, gridSize - 1)); // Top
-            order.Add(new Vector2Int(0, i)); // Left
-            order.Add(new Vector2Int(gridSize - 1, i)); // Right
-        }
-        
-        // Add remaining positions
-        for (int x = 0; x < gridSize; x++)
-        {
-            for (int y = 0; y < gridSize; y++)
-            {
-                Vector2Int pos = new Vector2Int(x, y);
-                if (!order.Contains(pos))
-                {
-                    order.Add(pos);
-                }
-            }
-        }
-        
-        return order;
-    }
-    
-    /// <summary>
-    /// Update placement cache when grid changes
-    /// </summary>
-    private void UpdatePlacementCache()
-    {
-        if (gridView == null) return;
-        
-        string currentGridHash = CalculateGridHash();
-        if (currentGridHash != _lastGridHash)
-        {
-            // Grid changed, clear cache
-            _blockPlacementCache.Clear();
-            _lastGridHash = currentGridHash;
-        }
-    }
-    
-    /// <summary>
-    /// Calculate hash of current grid state
-    /// </summary>
-    private string CalculateGridHash()
-    {
-        if (gridView == null) return "";
-        
-        System.Text.StringBuilder sb = new System.Text.StringBuilder();
-        for (int x = 0; x < gridView.GridSize; x++)
-        {
-            for (int y = 0; y < gridView.GridSize; y++)
-            {
-                sb.Append(gridView.IsCellOccupied(x, y) ? "1" : "0");
-            }
-        }
-        return sb.ToString();
+
+        return false;
     }
 
     // Kích hoạt game over
@@ -562,89 +387,6 @@ public class GameManager : MonoBehaviour
     // Public method để các script khác có thể gọi - OPTIMIZED
     public void OnBlockPlaced()
     {
-        // Start performance monitoring
-        BlockPerformanceMonitor.Instance?.StartTiming("BlockPlacement");
-        
-        // Cancel previous deferred operations
-        if (_deferredGameOverCheck != null)
-        {
-            StopCoroutine(_deferredGameOverCheck);
-            _deferredGameOverCheck = null;
-        }
-        
-        if (_deferredSpawnRoutine != null)
-        {
-            StopCoroutine(_deferredSpawnRoutine);
-            _deferredSpawnRoutine = null;
-        }
-        
-        // Start deferred game over check (longer delay to avoid conflict)
-        _deferredGameOverCheck = StartCoroutine(DeferredGameOverCheck());
-        
-        // End performance monitoring
-        BlockPerformanceMonitor.Instance?.EndTiming("BlockPlacement");
-    }
-    
-    /// <summary>
-    /// Deferred game over check with performance optimization
-    /// </summary>
-    private IEnumerator DeferredGameOverCheck()
-    {
-        // Start performance monitoring
-        BlockPerformanceMonitor.Instance?.StartTiming("GameOverCheck");
-        
-        // Wait longer to ensure block placement is complete and avoid spawn conflicts
-        yield return new WaitForSeconds(0.8f);
-        
-        if (isGameOver || _isCheckingGameOver) yield break;
-        
-        _isCheckingGameOver = true;
-        
-        // Check if we need to spawn new blocks first
-        if (spawnController != null)
-        {
-            int remainingBlocks = spawnController.transform.childCount;
-            
-            // If no blocks remaining, spawn new blocks first
-            if (remainingBlocks == 0)
-            {
-                // Start deferred spawn
-                _deferredSpawnRoutine = StartCoroutine(DeferredSpawnNewBlocks());
-                
-                // Wait for spawn to complete before checking game over
-                yield return new WaitForSeconds(0.3f);
-            }
-        }
-        
-        // Now check game over with optimized method
-        CheckGameOverOptimized();
-        
-        _isCheckingGameOver = false;
-        _deferredGameOverCheck = null;
-        
-        // End performance monitoring
-        BlockPerformanceMonitor.Instance?.EndTiming("GameOverCheck");
-    }
-    
-    /// <summary>
-    /// Deferred spawn to avoid blocking main thread
-    /// </summary>
-    private IEnumerator DeferredSpawnNewBlocks()
-    {
-        // Start performance monitoring
-        BlockPerformanceMonitor.Instance?.StartTiming("BlockSpawn");
-        
-        // Small delay to ensure smooth transition
-        yield return new WaitForSeconds(0.1f);
-        
-        if (spawnController != null)
-        {
-            spawnController.SpawnNewBlocks();
-        }
-        
-        _deferredSpawnRoutine = null;
-        
-        // End performance monitoring
-        BlockPerformanceMonitor.Instance?.EndTiming("BlockSpawn");
+        CheckGameOver();
     }
 }
