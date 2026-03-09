@@ -20,12 +20,12 @@ public class BlockSpawnController : MonoBehaviour
     public float cellScaleRatio = 0.5f;
 
     [Header("Layout")]
-    public float bottomReservedRatio = 0.3f;
-    public float horizontalPaddingRatio = 0.08f;
-    public float verticalPaddingRatio = 0.15f;
-
-    [Header("Fine Tune")]
-    [Range(0f, 0.3f)] public float raiseRatio = 0.12f;
+    [Tooltip("Chiều rộng khu vực spawn (world units)")]
+    public float spawnAreaWorldWidth = 12f;
+    [Tooltip("Offset dọc so với transform.position")]
+    public float spawnAreaYOffset = 0f;
+    [Tooltip("Khoảng cách cộng thêm giữa các block (world units)")]
+    public float extraSpacing = 0f;
 
     private float cellWorldSize;
     private readonly List<GameObject> currentBlocks = new List<GameObject>();
@@ -114,15 +114,10 @@ public class BlockSpawnController : MonoBehaviour
 
     void Spawn3Blocks()
     {
-        Camera cam = Camera.main;
-        float screenHeight = cam.orthographicSize * 2f;
-        float screenWidth = screenHeight * cam.aspect;
-
-        float bottomHeight = screenHeight * bottomReservedRatio;
-        float centerY = -screenHeight / 2f + bottomHeight * (0.5f + verticalPaddingRatio + raiseRatio);
-
-        float usableWidth = screenWidth * (1f - horizontalPaddingRatio * 2f);
-        float slotSpacing = usableWidth / 3f;
+        // Căn theo vị trí spawn area: block giữa nằm ở tâm, hai block còn lại ở hai bên
+        Vector3 areaCenter = transform.position;
+        float slotSpacing = (spawnAreaWorldWidth / 3f) + extraSpacing;
+        float centerY = areaCenter.y + spawnAreaYOffset;
 
         List<List<Vector2Int>> shapesToSpawn = new List<List<Vector2Int>>();
         for (int i = 0; i < 3; i++)
@@ -138,17 +133,19 @@ public class BlockSpawnController : MonoBehaviour
 
         for (int i = 0; i < 3; i++)
         {
-            float slotCenterX = (i - 1) * slotSpacing;
+            float slotCenterX = areaCenter.x + (i - 1) * slotSpacing;
 
             GameObject block = new GameObject($"BlockPreview_{i}");
             block.transform.SetParent(transform);
+            // Place the block transform at the visual slot center for now.
             block.transform.position = new Vector3(slotCenterX, centerY, 0);
 
             block.AddComponent<DragBlockController>();
 
+            // Spawn cells and internally shift the block transform so that the
+            // block's transform becomes the shape-origin (min x,min y) while
+            // keeping the visual centroid at the original slot center.
             SpawnBlockCells(block.transform, shapesToSpawn[i], colorIndices[i]);
-
-            BlockColliderBuilder.FitColliderToChildren(block);
 
             currentBlocks.Add(block);
         }

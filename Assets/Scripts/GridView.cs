@@ -30,10 +30,9 @@ public class GridView : MonoBehaviour
         Color.blue, Color.magenta, Color.white 
     };
 
-    [Header("Screen Ratios")]
-    [Range(0f, 0.3f)] public float topFreeRatio = 0.15f;
-    [Range(0f, 0.5f)] public float bottomReservedRatio = 0.30f;
-    [Range(0.6f, 1f)] public float gridWidthRatio = 0.9f;
+    [Header("Grid Layout")]
+    [Tooltip("Kích thước world tổng thể của grid (không tự co giãn theo màn hình)")]
+    public float desiredGridWorldSize = 8f;
 
     private int[,] gridData;
     private SpriteRenderer[,] renderers;
@@ -126,25 +125,23 @@ public class GridView : MonoBehaviour
 
     public void FitToScreen()
     {
-        Camera cam = Camera.main;
-        float screenH = cam.orthographicSize * 2f;
-        float screenW = screenH * cam.aspect;
-
         float gridWorldSize = gridSize * cellWorldSize;
-        float scaleW = (screenW * gridWidthRatio) / gridWorldSize;
-        float usableH = screenH * (1f - topFreeRatio - bottomReservedRatio);
-        float scaleH = usableH / gridWorldSize;
+        if (gridWorldSize <= 0f)
+            return;
 
-        float scale = Mathf.Min(scaleW, scaleH);
+        float scale = desiredGridWorldSize / gridWorldSize;
         transform.localScale = Vector3.one * scale;
 
-        float bottomY =
-            -screenH / 2f + screenH * bottomReservedRatio;
-
-        float centerY = bottomY + usableH / 2f;
-        transform.position = new Vector3(0, centerY, 0);
-
+        // Giữ nguyên vị trí hiện tại (không tự co giãn theo màn hình)
         basePosition = transform.position;
+    }
+
+    void OnDrawGizmos()
+    {
+        Gizmos.color = new Color(0.2f, 0.8f, 1f, 0.35f);
+        Gizmos.matrix = Matrix4x4.TRS(transform.position, transform.rotation, Vector3.one);
+        Gizmos.DrawWireCube(Vector3.zero, new Vector3(desiredGridWorldSize, desiredGridWorldSize, 0.1f));
+        Gizmos.matrix = Matrix4x4.identity;
     }
 
     // ===== LOGIC =====
@@ -166,52 +163,6 @@ public class GridView : MonoBehaviour
                         return false;
                 }
         return true;
-    }
-
-    public void ClearGhost()
-    {
-        // Clear highlights trước
-        ClearAllHighlights();
-        
-        for (int y = 0; y < gridSize; y++)
-            for (int x = 0; x < gridSize; x++)
-                if (gridData[x, y] == 0)
-                {
-                    renderers[x, y].sprite = gridSprite;
-                    renderers[x, y].color = Color.white;
-                }
-    }
-
-    // Overload cho trường hợp không có màu block (để tương thích với code cũ)
-    public void ShowGhost(BlockData block, int ax, int ay)
-    {
-        ShowGhost(block, ax, ay, Color.white);
-    }
-
-    public void ShowGhost(BlockData block, int ax, int ay, Color blockColor)
-    {
-        ClearGhost();
-
-        for (int i = 0; i < 5; i++)
-            for (int j = 0; j < 5; j++)
-                if (block.mask[i, j] == 1)
-                {
-                    int gx = ax + i;
-                    int gy = ay + j;
-
-                    renderers[gx, gy].sprite = cellSprite;
-                    // Dùng màu của block với alpha 0.4f
-                    Color ghostColor = new Color(blockColor.r, blockColor.g, blockColor.b, 0.4f);
-                    renderers[gx, gy].color = ghostColor;
-                }
-        
-        List<int> rowsToClear = GetRowsToClear(block, ax, ay);
-        List<int> colsToClear = GetColsToClear(block, ax, ay);
-        
-        if (rowsToClear.Count > 0 || colsToClear.Count > 0)
-        {
-            HighlightLinesToClear(rowsToClear, colsToClear, blockColor, block, ax, ay);
-        }
     }
 
     // Overload cho trường hợp không có màu block (để tương thích với code cũ)
@@ -300,144 +251,6 @@ public class GridView : MonoBehaviour
         shakeRoutine = null;
     }
 
-    // Kiểm tra hàng/cột sẽ được clear khi đặt block vào vị trí ghost
-    public List<int> GetRowsToClear(BlockData block, int ax, int ay)
-    {
-        List<int> rowsToClear = new List<int>();
-        
-        // Tạo grid tạm thời với block được thêm vào
-        int[,] tempGrid = (int[,])gridData.Clone();
-        
-        // Apply block vào temp grid
-        for (int i = 0; i < 5; i++)
-            for (int j = 0; j < 5; j++)
-                if (block.mask[i, j] == 1)
-                {
-                    int gx = ax + i;
-                    int gy = ay + j;
-                    if (gx >= 0 && gx < gridSize && gy >= 0 && gy < gridSize)
-                        tempGrid[gx, gy] = 1;
-                }
-        
-        // Kiểm tra các hàng trong temp grid
-        for (int y = 0; y < gridSize; y++)
-        {
-            bool rowFull = true;
-            for (int x = 0; x < gridSize; x++)
-            {
-                if (tempGrid[x, y] == 0)
-                {
-                    rowFull = false;
-                    break;
-                }
-            }
-            if (rowFull)
-                rowsToClear.Add(y);
-        }
-        
-        return rowsToClear;
-    }
-    
-    public List<int> GetColsToClear(BlockData block, int ax, int ay)
-    {
-        List<int> colsToClear = new List<int>();
-        
-        // Tạo grid tạm thời với block được thêm vào
-        int[,] tempGrid = (int[,])gridData.Clone();
-        
-        // Apply block vào temp grid
-        for (int i = 0; i < 5; i++)
-            for (int j = 0; j < 5; j++)
-                if (block.mask[i, j] == 1)
-                {
-                    int gx = ax + i;
-                    int gy = ay + j;
-                    if (gx >= 0 && gx < gridSize && gy >= 0 && gy < gridSize)
-                        tempGrid[gx, gy] = 1;
-                }
-        
-        // Kiểm tra các cột trong temp grid
-        for (int x = 0; x < gridSize; x++)
-        {
-            bool colFull = true;
-            for (int y = 0; y < gridSize; y++)
-            {
-                if (tempGrid[x, y] == 0)
-                {
-                    colFull = false;
-                    break;
-                }
-            }
-            if (colFull)
-                colsToClear.Add(x);
-        }
-        
-        return colsToClear;
-    }
-
-    // Highlight hàng/cột sẽ được clear
-    public void HighlightLinesToClear(List<int> rows, List<int> cols, Color blockColor, BlockData ghostBlock = null, int ghostAx = -999, int ghostAy = -999)
-    {
-        // Clear highlight cũ trước
-        ClearAllHighlights();
-        
-        // Highlight các hàng
-        foreach (int y in rows)
-        {
-            for (int x = 0; x < gridSize; x++)
-            {
-                // Highlight filled cells hoặc ghost cells
-                if (gridData[x, y] == 1 || IsGhostCell(x, y, ghostBlock, ghostAx, ghostAy))
-                {
-                    // Dùng màu của block đang kéo cho highlight
-                    Color highlightColor = new Color(blockColor.r, blockColor.g, blockColor.b, 0.8f);
-                    renderers[x, y].color = highlightColor;
-                    highlightState[x, y] = true;
-                }
-            }
-        }
-        
-        // Highlight các cột
-        foreach (int x in cols)
-        {
-            for (int y = 0; y < gridSize; y++)
-            {
-                // Highlight filled cells hoặc ghost cells
-                if (gridData[x, y] == 1 || IsGhostCell(x, y, ghostBlock, ghostAx, ghostAy))
-                {
-                    // Dùng màu của block đang kéo cho highlight
-                    Color highlightColor = new Color(blockColor.r, blockColor.g, blockColor.b, 0.8f);
-                    renderers[x, y].color = highlightColor;
-                    highlightState[x, y] = true;
-                }
-            }
-        }
-    }
-    
-    // Overload cho trường hợp không có màu block (để tương thích với code cũ)
-    public void HighlightLinesToClear(List<int> rows, List<int> cols, BlockData ghostBlock = null, int ghostAx = -999, int ghostAy = -999)
-    {
-        HighlightLinesToClear(rows, cols, Color.white, ghostBlock, ghostAx, ghostAy);
-    }
-    
-    // Kiểm tra xem cell có phải là ghost cell không
-    private bool IsGhostCell(int x, int y, BlockData ghostBlock, int ghostAx, int ghostAy)
-    {
-        if (ghostBlock == null || ghostAx == -999 || ghostAy == -999)
-            return false;
-            
-        for (int i = 0; i < 5; i++)
-            for (int j = 0; j < 5; j++)
-                if (ghostBlock.mask[i, j] == 1)
-                {
-                    int gx = ghostAx + i;
-                    int gy = ghostAy + j;
-                    if (gx == x && gy == y)
-                        return true;
-                }
-        return false;
-    }
-    
     // Clear tất cả highlights
     public void ClearAllHighlights()
     {
@@ -614,7 +427,7 @@ public class GridView : MonoBehaviour
             }
         }
         
-        ClearGhost();
+        ClearAllHighlights();
     }
     
     // Get cell renderer tại vị trí cụ thể

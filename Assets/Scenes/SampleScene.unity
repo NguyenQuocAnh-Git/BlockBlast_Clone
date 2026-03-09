@@ -445,39 +445,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   enableSmartSpawning: 1
-  baseFittingBlockChance: 0.3
-  baseScoringBlockChance: 0.7
-  enableDynamicDifficulty: 1
-  scoreThresholdStep: 600
-  maxFittingChance: 0.8
-  difficultyTransitionSpeed: 0.2
-  preferSmallerBlocks: 0
-  preferFittingBlocks: 1
-  minBlockComplexity: 4
-  maxBlockComplexity: 9
-  enableLargeBlockBonus: 1
-  largeBlockMultiplier: 25
-  forceLargeBlocks: 1
-  largeBlockThreshold: 5
-  superLargeBlockBonus: 50
-  ultraLargeBlockBonus: 100
-  enableAntiDeadlock: 1
-  minEmptyCellsForLargeBlock: 12
-  largeBlockDeadlockThreshold: 0.3
-  preferMediumWhenCrowded: 1
-  crowdedThreshold: 20
-  mediumBlockPreferenceWhenCrowded: 0.7
-  enableTwoRoundCombo: 1
-  comboRoundWindow: 2
-  comboBlockTarget: 6
-  comboBlockPriorityMultiplier: 30
-  trackRecentPlacements: 1
-  ensureShapeVariety: 0
-  maxSameShapeRatio: 0.8
-  enableGridClearPriority: 1
-  gridClearBonusMultiplier: 15
-  minLinesForGridClearBonus: 3
-  preferMultiDirectionClears: 1
 --- !u!4 &514234568
 Transform:
   m_ObjectHideFlags: 0
@@ -580,7 +547,7 @@ Transform:
   m_GameObject: {fileID: 519420028}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: -10}
+  m_LocalPosition: {x: 0, y: 0.48, z: -10}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -599,7 +566,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   gridView: {fileID: 1583794265}
-  paddingPercentage: 0.35
+  paddingPercentage: 0.5
   targetCamera: {fileID: 0}
   maintainAspectRatio: 0
   targetAspectRatio: 0.5625
@@ -831,7 +798,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: -133, y: 419.5937}
+  m_AnchoredPosition: {x: -53, y: 419.5937}
   m_SizeDelta: {x: 385.38306, y: 91.34668}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &1385902945
@@ -947,7 +914,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1479995493
 Transform:
   m_ObjectHideFlags: 0
@@ -1416,9 +1383,7 @@ MonoBehaviour:
   - {r: 0, g: 0, b: 1, a: 1}
   - {r: 1, g: 0, b: 1, a: 1}
   - {r: 1, g: 1, b: 1, a: 1}
-  topFreeRatio: 0.2
-  bottomReservedRatio: 0.3
-  gridWidthRatio: 0.9
+  desiredGridWorldSize: 5.17
   enableGridShake: 1
   shakeBaseDuration: 0.1
   shakeBaseMagnitude: 0.05
@@ -1434,7 +1399,7 @@ Transform:
   m_GameObject: {fileID: 1583794264}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.7079737, y: 0.08128461, z: 2.3857996}
+  m_LocalPosition: {x: 0.01, y: 0.77, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1807,7 +1772,7 @@ Transform:
   m_GameObject: {fileID: 1839989705}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 0, y: -3.86, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1832,12 +1797,10 @@ MonoBehaviour:
   - {r: 0.21359916, g: 0.21359916, b: 0.6037736, a: 1}
   - {r: 0.5566038, g: 0.3779341, b: 0.21266466, a: 1}
   - {r: 0.4513883, g: 0.21938412, b: 0.5471698, a: 1}
-  cellScaleRatio: 0.1
-  bottomReservedRatio: 0.3
-  horizontalPaddingRatio: 0.08
-  verticalPaddingRatio: 0.15
-  raiseRatio: 0.12
-  smartBlockSelector: {fileID: 1839989709}
+  cellScaleRatio: 0.2
+  spawnAreaWorldWidth: 6
+  spawnAreaYOffset: 0
+  extraSpacing: 0
 --- !u!114 &1839989709
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1852,42 +1815,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   useSmartSpawning: 1
   prioritizeLargeBlocks: 1
-  largeBlockPriorityChance: 0.95
-  restrictSmallBlocks: 1
-  smallBlockCriticalChance: 0.001
-  allowOnlyCriticalSmallBlocks: 1
-  onlyWhenNoOtherBlocksFit: 1
-  enableAntiDeadlockInSelector: 1
   minEmptyCellsForLargeBlockSelector: 10
-  largeBlockDeadlockThresholdSelector: 0.25
-  enableDynamicPriority: 1
-  enableComboIntegration: 1
-  comboPriorityOverrideChance: 0.9
-  preferComboBlocksOverLarge: 1
-  enableComboPriority: 1
-  comboPriorityChance: 0.95
-  enableMegaComboPriority: 0
-  megaComboPriorityChance: 0.85
-  minLinesForMegaCombo: 2
-  preferMultiDirectionCombos: 1
-  enableSmartMegaCombo: 1
-  smartMegaComboChance: 0.85
-  maxEmptyCellsForLine: 4
-  enablePerfectClear: 1
-  perfectClearChance: 0.995
-  minGridOccupancyForPerfectClear: 6
-  preferPerfectClearOverEverything: 1
-  enableBlockMerging: 1
-  mergingBlockChance: 0.95
-  maxMergeDistance: 2
-  preferLargeMerges: 1
-  largeMergeBonus: 2.5
-  suppressSmallBlocks: 1
-  smallBlockSuppressionChance: 0.95
-  minSmallBlockCells: 3
-  preferMediumBlocks: 1
-  enableDebugLogs: 1
-  debugLogChance: 0.1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
