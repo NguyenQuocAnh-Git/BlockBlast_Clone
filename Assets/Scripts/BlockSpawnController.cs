@@ -86,6 +86,35 @@ public class BlockSpawnController : MonoBehaviour
         currentBlocks.Clear();
     }
 
+    // Check whether any currently spawned block can be placed into the provided grid.
+    // Simple, early-exit check for game-over logic.
+    public bool AnyBlockPlaceable(GridView grid)
+    {
+        if (grid == null) return false;
+        if (currentBlocks == null || currentBlocks.Count == 0) return false;
+
+        int size = grid.GridSize;
+        foreach (var go in currentBlocks)
+        {
+            if (go == null) continue;
+            var drag = go.GetComponent<DragBlockController>();
+            if (drag == null) continue;
+            var block = drag.BlockData;
+            if (block == null) continue;
+
+            // Try anchors; early exit on first valid placement
+            for (int ax = 0; ax < size; ax++)
+            {
+                for (int ay = 0; ay < size; ay++)
+                {
+                    if (grid.CanPlace(block, ax, ay)) return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
 
 
     // ==============================

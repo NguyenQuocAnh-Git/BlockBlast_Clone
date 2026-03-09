@@ -66,6 +66,17 @@ public class SmartBlockSelector : MonoBehaviour
 
             var shapes = new List<List<Vector2Int>>();
 
+            // If we have a smart spawner available, prefer it — it guarantees placeable shapes
+            if (useSmartSpawning && smartSpawner != null)
+            {
+                var smart = smartSpawner.GetSmartBlockList(3);
+                if (smart != null && smart.Count > 0)
+                {
+                    CacheGeneratedShapes(smart);
+                    return smart;
+                }
+            }
+
             if (prioritizeLargeBlocks && analysis.largeShapes.Count > 0 && emptyCells >= minEmptyCellsForLargeBlockSelector)
             {
                 for (int i = 0; i < 3; i++)

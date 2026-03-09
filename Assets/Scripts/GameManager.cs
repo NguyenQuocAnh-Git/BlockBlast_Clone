@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using TMPro;
@@ -267,16 +267,10 @@ public class GameManager : MonoBehaviour
             spawnController.SpawnNewBlocks();
         }
 
-        foreach (Transform blockTransform in spawnController.transform)
+        // Use BlockSpawnController helper for a concise, efficient check
+        if (spawnController.AnyBlockPlaceable(gridView))
         {
-            var dragController = blockTransform.GetComponent<DragBlockController>();
-            if (dragController != null && dragController.BlockData != null)
-            {
-                if (CanPlaceBlockAnywhere(dragController.BlockData))
-                {
-                    return; // Vẫn còn chỗ đặt => tiếp tục chơi
-                }
-            }
+            return; // At least one spawnable block can be placed
         }
 
         TriggerGameOver();

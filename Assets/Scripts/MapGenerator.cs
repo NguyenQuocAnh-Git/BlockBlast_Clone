@@ -23,6 +23,9 @@ public class MapGenerator : MonoBehaviour
     private GridView gridView;
     private int gridSize;
     
+    // Expose grid size for other systems (read-only)
+    public int GridSize => gridSize;
+    
     void Awake()
     {
         gridView = FindObjectOfType<GridView>();

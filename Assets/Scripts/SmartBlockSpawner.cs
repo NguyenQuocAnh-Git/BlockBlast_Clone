@@ -14,7 +14,8 @@ public class SmartBlockSpawner : MonoBehaviour
     [Header("Smart Spawning")]
     public bool enableSmartSpawning = true;
     // Number of grid cells per side (assumes square grid, default 8)
-    private const int GridSize = 8;
+    // Use MapGenerator's grid size when available.
+    private int GridSize => mapGenerator != null ? mapGenerator.GridSize : 8;
 
     // Reference to map for getting empty cells
     private MapGenerator mapGenerator;
@@ -70,8 +71,23 @@ public class SmartBlockSpawner : MonoBehaviour
 
         if (ordered.Count < blockCount)
         {
-            var extras = GetRandomBlocks(blockCount - ordered.Count);
-            ordered.AddRange(extras);
+            // Fill remaining slots with candidate shapes that have at least one valid placement,
+            // preferring larger shapes so player has meaningful pieces.
+            var remaining = new List<List<Vector2Int>>();
+            foreach (var c in candidates.OrderByDescending(s => s.Count))
+            {
+                if (remaining.Count + ordered.Count >= blockCount) break;
+                if (ordered.Contains(c, new ShapeListComparer())) continue;
+                if (CountValidPositions(c, emptySet) > 0) remaining.Add(c);
+            }
+            // If still not enough, fallback to random placeable shapes
+            int need = blockCount - (ordered.Count + remaining.Count);
+            if (need > 0)
+            {
+                var rndExtras = GetRandomPlaceableBlocks(need, emptySet);
+                remaining.AddRange(rndExtras);
+            }
+            ordered.AddRange(remaining.Take(blockCount - ordered.Count));
         }
 
         return ordered;
@@ -170,6 +186,26 @@ public class SmartBlockSpawner : MonoBehaviour
     {
         var outList = new List<List<Vector2Int>>();
         for (int i = 0; i < count; i++) outList.Add(TetrisShapes.GetRandomShapeWithRotation());
+        return outList;
+    }
+
+    // Return random blocks that are placeable given current empty set.
+    private List<List<Vector2Int>> GetRandomPlaceableBlocks(int count, HashSet<Vector2Int> emptySet)
+    {
+        var outList = new List<List<Vector2Int>>();
+        int attempts = 0;
+        int maxAttempts = count * 20;
+        while (outList.Count < count && attempts < maxAttempts)
+        {
+            attempts++;
+            var s = TetrisShapes.GetRandomShapeWithRotation();
+            if (s == null) continue;
+            var norm = NormalizeShape(s);
+            if (CountValidPositions(norm, emptySet) > 0 && !outList.Contains(norm, new ShapeListComparer()))
+                outList.Add(norm);
+        }
+        // As a last resort, fall back to any random shapes (can happen rarely)
+        while (outList.Count < count) outList.Add(TetrisShapes.GetRandomShapeWithRotation());
         return outList;
     }
 }
