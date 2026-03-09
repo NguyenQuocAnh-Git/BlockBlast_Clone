@@ -142,10 +142,10 @@ public class BlockSpawnController : MonoBehaviour
 
             block.AddComponent<DragBlockController>();
 
-            // Spawn cells and internally shift the block transform so that the
+            // Spawn cells using the new origin-based layout so that the
             // block's transform becomes the shape-origin (min x,min y) while
             // keeping the visual centroid at the original slot center.
-            SpawnBlockCells(block.transform, shapesToSpawn[i], colorIndices[i]);
+            SpawnBlockCellsNew(block.transform, shapesToSpawn[i], colorIndices[i]);
 
             currentBlocks.Add(block);
         }
@@ -203,8 +203,55 @@ public class BlockSpawnController : MonoBehaviour
 
     }
 
+    // New spawn method: parent.transform represents the shape-origin (min x,min y).
+    void SpawnBlockCellsNew(Transform parent, List<Vector2Int> shape, int colorIndex)
+    {
+        DragBlockController dragController = parent.GetComponent<DragBlockController>();
+        if (dragController != null)
+        {
+            dragController.SetShape(shape);
+            dragController.SetBlockColor(blockColors[colorIndex % blockColors.Length]);
+        }
 
+        // Compute minimum offset (shape-origin)
+        Vector2 minOffset = new Vector2(float.MaxValue, float.MaxValue);
+        foreach (var c in shape)
+        {
+            if (c.x < minOffset.x) minOffset.x = c.x;
+            if (c.y < minOffset.y) minOffset.y = c.y;
+        }
 
+        List<Vector2> localOffsets = new List<Vector2>(shape.Count);
+        Vector2 centroidLocal = Vector2.zero;
+        foreach (var off in shape)
+        {
+            Vector2 lo = (off - minOffset);
+            localOffsets.Add(lo);
+            centroidLocal += lo;
+        }
+        centroidLocal /= shape.Count;
+
+        // Keep visual centroid at parent's original position but make parent represent origin
+        Vector3 slotCenter = parent.transform.position;
+        Vector3 originWorldPos = slotCenter - (Vector3)(centroidLocal * cellWorldSize);
+        parent.transform.position = originWorldPos;
+
+        // Create child cells relative to shape-origin
+        foreach (var lo in localOffsets)
+        {
+            GameObject cell = new GameObject("Cell");
+            cell.transform.SetParent(parent);
+
+            SpriteRenderer sr = cell.AddComponent<SpriteRenderer>();
+            sr.sprite = cellSprite;
+            sr.color = blockColors[colorIndex % blockColors.Length];
+            sr.sortingOrder = 5;
+
+            Vector2 localPos = lo * cellWorldSize;
+            cell.transform.localPosition = new Vector3(localPos.x, localPos.y, 0);
+            cell.transform.localScale = Vector3.one * cellScaleRatio;
+        }
+    }
 
 }
 

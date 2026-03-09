@@ -22,6 +22,12 @@ public class DragBlockController : MonoBehaviour
     [Header("Selection")]
     public float selectionRadius = 2.0f;
     public bool useRayBasedSelection = true;
+    [Tooltip("Number of sample rays cast around the click (screen-space samples)")]
+    public int raySampleCount = 24;
+    [Tooltip("Radius in screen pixels for sampling around click")]
+    public float raySampleRadius = 48f;
+    [Tooltip("Draw debug raycast gizmos for selection")]
+    public bool debugRaycastGizmos = true;
 
     [Header("Debug")]
     public bool debugGizmos = false;
@@ -40,6 +46,9 @@ public class DragBlockController : MonoBehaviour
     private Vector3 startInput;
     private Vector3 startBlock;
     private float currentYOffset;
+    // Ghost preview while hovering
+    private GameObject ghostParent;
+    private Vector2Int currentGhostAnchor = new Vector2Int(InvalidAnchor, InvalidAnchor);
 
     private BlockData blockData;
     private Color blockColor = Color.white;
@@ -57,6 +66,11 @@ public class DragBlockController : MonoBehaviour
     public void SetBlockColor(Color color) => blockColor = color;
     public void SetShape(List<Vector2Int> shape) => blockData = new BlockData(shape);
 
+    // Debug selection rays visualization
+    private List<Vector3> lastRaySamplePoints = new List<Vector3>();
+    private List<Vector3> lastRayHitPoints = new List<Vector3>();
+    private Transform lastRaySelected = null;
+    private Vector3 lastClickForRays = Vector3.zero;
     void Awake()
     {
         cam = Camera.main;
@@ -105,7 +119,8 @@ public class DragBlockController : MonoBehaviour
         Vector3 freeMove = startBlock + (mouseWorld - startInput) * dragMultiplier;
         freeMove.y += currentYOffset;
         transform.position = freeMove;
-
+        // Update ghost preview based on current block origin
+        UpdateGhostPreview();
     }
 
     void OnMouseUp() => Release(); // fallback for collider setups
@@ -122,33 +137,23 @@ public class DragBlockController : MonoBehaviour
             adjustedToGridScale = false;
         }
 
+        DestroyGhost();
+
         if (grid == null || blockData == null)
         {
             ReturnToSpawnPosition();
             return;
         }
 
-        // Prefer snap based on where the player released (pointer position).
-        Vector3 pointerWorld = GetInputWorld();
-
-        // Determine which cell of the block the pointer is over (mask indices 0..4).
+        // Prefer snap based on where the block currently is (shape-origin), not the pointer.
         float disp = GetDisplayedCellWorldSize();
-        Vector2 centroid = GetShapeCentroidLocal();
-        Vector2 delta = (Vector2)(pointerWorld - transform.position);
-        Vector2 maskFloat = new Vector2(delta.x / disp + centroid.x, delta.y / disp + centroid.y);
-        Vector2Int maskIndex = new Vector2Int(
-            Mathf.Clamp(Mathf.RoundToInt(maskFloat.x), 0, 4),
-            Mathf.Clamp(Mathf.RoundToInt(maskFloat.y), 0, 4)
-        );
+        Vector3 originWorld = GetShapeOriginWorld();
+        Vector2Int originGrid = GridHelper.WorldToGrid(grid, originWorld);
+        originGrid = ClampToGrid(originGrid);
+        Vector2Int desiredAnchor = originGrid;
 
-        // Find the grid cell under the pointer, then compute the anchor so that
-        // block.mask[maskIndex] would land on that cell.
-        Vector2Int pointerGrid = GridHelper.WorldToGrid(grid, pointerWorld);
-        pointerGrid = ClampToGrid(pointerGrid);
-        Vector2Int desiredAnchor = new Vector2Int(pointerGrid.x - maskIndex.x, pointerGrid.y - maskIndex.y);
-
-        // If pointer is far from grid entirely, cancel.
-        float distToGrid = Vector3.Distance(pointerWorld, grid.GetAnchorWorldPosition(pointerGrid.x, pointerGrid.y));
+        // If block origin is far from grid entirely, cancel.
+        float distToGrid = Vector3.Distance(originWorld, grid.GetAnchorWorldPosition(originGrid.x, originGrid.y));
         if (distToGrid > disp * maxGhostDistance)
         {
             ReturnToSpawnPosition();
@@ -158,8 +163,8 @@ public class DragBlockController : MonoBehaviour
 
         // Try desired anchor first, then nearby anchors, then fallback to best by proximity.
         if (TryPlaceAt(desiredAnchor)) return;
-        if (TryFindNearbyPlacement(desiredAnchor, pointerWorld, out Vector2Int nearby) && TryPlaceAt(nearby)) return;
-        if (TryFindBestPlacementAnchor(pointerWorld, out Vector2Int best) && TryPlaceAt(best)) return;
+        if (TryFindNearbyPlacement(desiredAnchor, originWorld, out Vector2Int nearby) && TryPlaceAt(nearby)) return;
+        if (TryFindBestPlacementAnchor(originWorld, out Vector2Int best) && TryPlaceAt(best)) return;
 
         // Fallback
         ReturnToSpawnPosition();
@@ -198,20 +203,119 @@ public class DragBlockController : MonoBehaviour
     // Select nearest block within selectionRadius
     private void TrySelectNearest(Vector3 clickWorld)
     {
-        var all = FindObjectsOfType<DragBlockController>();
-        float best = float.MaxValue;
+        // Improved ray-sampling selection:
+        // Cast a ring of sample rays around the click screen position to prefer
+        // objects that are visually under/near the touch. Fall back to distance-based selection.
+        Camera camLocal = cam != null ? cam : Camera.main;
+        if (camLocal == null)
+        {
+            // fallback
+            var all = FindObjectsOfType<DragBlockController>();
+            float best = float.MaxValue;
+            DragBlockController chosenFallback = null;
+            foreach (var c in all)
+            {
+                if (c == null) continue;
+                float d = Vector3.Distance(clickWorld, c.transform.position);
+                if (d < best && d <= c.selectionRadius)
+                {
+                    best = d;
+                    chosenFallback = c;
+                }
+            }
+            chosenFallback?.BeginDragFromClick(clickWorld);
+            return;
+        }
+
+        lastRaySamplePoints.Clear();
+        lastRayHitPoints.Clear();
+        lastRaySelected = null;
+        lastClickForRays = clickWorld;
+
+        Vector3 screen = camLocal.WorldToScreenPoint(clickWorld);
+        screen.z = -camLocal.transform.position.z;
+
+        float bestDist = float.MaxValue;
+        DragBlockController bestController = null;
+
+        int samples = Mathf.Max(4, raySampleCount);
+        for (int i = 0; i < samples; i++)
+        {
+            float angle = (Mathf.PI * 2f) * (i / (float)samples);
+            float dx = Mathf.Cos(angle) * raySampleRadius;
+            float dy = Mathf.Sin(angle) * raySampleRadius;
+            Vector3 sampleScreen = new Vector3(screen.x + dx, screen.y + dy, screen.z);
+            Vector3 sampleWorld = camLocal.ScreenToWorldPoint(sampleScreen);
+            lastRaySamplePoints.Add(sampleWorld);
+
+            // Try 2D overlap at the sample point
+            Collider2D[] cols = Physics2D.OverlapPointAll(sampleWorld);
+            if (cols != null && cols.Length > 0)
+            {
+                foreach (var col in cols)
+                {
+                    if (col == null) continue;
+                    var ctrl = col.GetComponentInParent<DragBlockController>();
+                    if (ctrl == null) continue;
+                    lastRayHitPoints.Add(col.transform.position);
+                    float dClick = Vector3.Distance(clickWorld, col.transform.position);
+                    if (dClick < bestDist && dClick <= ctrl.selectionRadius)
+                    {
+                        bestDist = dClick;
+                        bestController = ctrl;
+                        lastRaySelected = ctrl.transform;
+                    }
+                }
+                continue;
+            }
+
+            // If no 2D collider, perform a 3D ray intersection (for SpriteRenderer without collider this may not hit).
+            Ray ray = camLocal.ScreenPointToRay(sampleScreen);
+            RaycastHit2D hit2 = Physics2D.GetRayIntersection(ray, Mathf.Infinity);
+            if (hit2.collider != null)
+            {
+                lastRayHitPoints.Add(hit2.point);
+                var ctrl = hit2.collider.GetComponentInParent<DragBlockController>();
+                if (ctrl != null)
+                {
+                    float dClick = Vector3.Distance(clickWorld, hit2.point);
+                    if (dClick < bestDist && dClick <= ctrl.selectionRadius)
+                    {
+                        bestDist = dClick;
+                        bestController = ctrl;
+                        lastRaySelected = ctrl.transform;
+                    }
+                }
+                continue;
+            }
+        }
+
+        // If we found a controller via ray sampling, select it. Otherwise fallback to nearest by distance.
+        if (bestController != null)
+        {
+            bestController.BeginDragFromClick(clickWorld);
+            return;
+        }
+
+        // Fallback: nearest by distance
+        var allControllers = FindObjectsOfType<DragBlockController>();
+        float bestFallback = float.MaxValue;
         DragBlockController chosen = null;
-        foreach (var c in all)
+        foreach (var c in allControllers)
         {
             if (c == null) continue;
             float d = Vector3.Distance(clickWorld, c.transform.position);
-            if (d < best && d <= c.selectionRadius)
+            if (d < bestFallback && d <= c.selectionRadius)
             {
-                best = d;
+                bestFallback = d;
                 chosen = c;
             }
         }
-        chosen?.BeginDragFromClick(clickWorld);
+        if (chosen != null)
+        {
+            lastRaySelected = chosen.transform;
+            chosen.BeginDragFromClick(clickWorld);
+        }
     }
 
     // Scale/position child cells to match grid cell size
@@ -277,6 +381,80 @@ public class DragBlockController : MonoBehaviour
         return grid.CellWorldSize * Mathf.Abs(grid.transform.localScale.x);
     }
 
+    // Ghost preview helpers
+    private void UpdateGhostPreview()
+    {
+        if (grid == null || blockData == null) { DestroyGhost(); return; }
+
+        float disp = GetDisplayedCellWorldSize();
+        Vector3 originWorld = GetShapeOriginWorld();
+        Vector2Int originGrid = GridHelper.WorldToGrid(grid, originWorld);
+        originGrid = ClampToGrid(originGrid);
+
+        // If origin too far, hide ghost
+        float distToGrid = Vector3.Distance(originWorld, grid.GetAnchorWorldPosition(originGrid.x, originGrid.y));
+        if (distToGrid > disp * maxGhostDistance) { DestroyGhost(); return; }
+
+        // Choose anchor using same logic as on release
+        Vector2Int candidate = originGrid;
+        if (!grid.CanPlace(blockData, candidate.x, candidate.y))
+        {
+            if (TryFindNearbyPlacement(candidate, originWorld, out Vector2Int nearby))
+                candidate = nearby;
+            else if (TryFindBestPlacementAnchor(originWorld, out Vector2Int best))
+                candidate = best;
+            else
+            {
+                DestroyGhost();
+                return;
+            }
+        }
+
+        if (currentGhostAnchor.x == candidate.x && currentGhostAnchor.y == candidate.y && ghostParent != null) return;
+        BuildGhostAtAnchor(candidate);
+    }
+
+    private void BuildGhostAtAnchor(Vector2Int anchor)
+    {
+        DestroyGhost();
+        if (grid == null || blockData == null) return;
+
+        ghostParent = new GameObject($"Ghost_{gameObject.name}");
+        ghostParent.transform.position = grid.GetAnchorWorldPosition(anchor.x, anchor.y);
+        currentGhostAnchor = anchor;
+
+        float disp = GetDisplayedCellWorldSize();
+        Sprite sprite = spawnController != null ? spawnController.cellSprite : null;
+        float baseSize = (sprite != null) ? sprite.bounds.size.x : 1f;
+        float scale = baseSize > 0f ? (disp / baseSize) : 1f;
+
+        for (int i = 0; i < 5; i++)
+            for (int j = 0; j < 5; j++)
+                if (blockData.mask[i, j] == 1)
+                {
+                    GameObject c = new GameObject($"g_{i}_{j}");
+                    c.transform.SetParent(ghostParent.transform);
+                    c.transform.localPosition = new Vector3(i * disp, j * disp, 0);
+                    var sr = c.AddComponent<SpriteRenderer>();
+                    sr.sprite = sprite;
+                    Color col = blockColor;
+                    col.a = 0.45f;
+                    sr.color = col;
+                    sr.sortingOrder = 2;
+                    c.transform.localScale = Vector3.one * scale;
+                }
+    }
+
+    private void DestroyGhost()
+    {
+        currentGhostAnchor = new Vector2Int(InvalidAnchor, InvalidAnchor);
+        if (ghostParent != null)
+        {
+            Destroy(ghostParent);
+            ghostParent = null;
+        }
+    }
+
     // Compute centroid of the shape in mask-local coordinates (0..4)
     private Vector2 GetShapeCentroidLocal()
     {
@@ -293,14 +471,11 @@ public class DragBlockController : MonoBehaviour
         return count > 0 ? (sum / count) : Vector2.zero;
     }
 
-    // Returns the world position of the block's shape-origin (mask-space (0,0))
+    // Returns the world position of the block's shape-origin (mask-space (0,0)).
+    // NOTE: new design: transform.position represents the shape-origin directly.
     private Vector3 GetShapeOriginWorld()
     {
-        Vector2 centroid = GetShapeCentroidLocal();
-        float disp = GetDisplayedCellWorldSize();
-        // The transform.position currently represents the visual centroid (spawn code centers by centroid).
-        // To get the origin, subtract centroid in world units.
-        return transform.position - (Vector3)(centroid * disp);
+        return transform.position;
     }
 
     // Map world position to nearest grid anchor using rounding
@@ -334,13 +509,10 @@ public class DragBlockController : MonoBehaviour
     {
         if (grid == null || blockData == null) return false;
         if (!grid.CanPlace(blockData, anchor.x, anchor.y)) return false;
-        // Align the visual transform so that the block's shape-origin (mask (0,0))
-        // is placed at the grid anchor. transform.position represents the visual
-        // centroid, so we offset by centroid * displayedCellSize.
-        Vector2 centroid = GetShapeCentroidLocal();
+        // Align the block's shape-origin (mask (0,0)) directly with the grid anchor.
         float disp = GetDisplayedCellWorldSize();
         Vector3 anchorWorld = grid.GetAnchorWorldPosition(anchor.x, anchor.y);
-        transform.position = anchorWorld + (Vector3)(centroid * disp);
+        transform.position = anchorWorld;
         grid.ApplyBlock(blockData, anchor.x, anchor.y, blockColor);
         spawnController?.OnBlockDestroyed(gameObject);
         GameManager.Instance?.OnBlockPlaced();
@@ -466,6 +638,31 @@ public class DragBlockController : MonoBehaviour
             Gizmos.color = new Color(1f, 0.6f, 0.0f, 0.9f);
             Gizmos.DrawLine(LastClickWorld, CurrentSelected.transform.position);
             Gizmos.DrawWireSphere(CurrentSelected.transform.position, debugPointRadius * 1.5f);
+        }
+        // Draw raycast-sampling selection debug
+        if (debugRaycastGizmos && lastRaySamplePoints != null && lastRaySamplePoints.Count > 0)
+        {
+            Camera camLocal = cam != null ? cam : Camera.main;
+            Gizmos.color = new Color(0.2f, 0.8f, 1f, 0.5f);
+            foreach (var p in lastRaySamplePoints)
+            {
+                Gizmos.DrawLine(camLocal.transform.position, p);
+                Gizmos.DrawWireSphere(p, debugPointRadius * 0.8f);
+            }
+
+            Gizmos.color = new Color(0.2f, 1f, 0.2f, 0.9f);
+            foreach (var h in lastRayHitPoints)
+            {
+                Gizmos.DrawWireSphere(h, debugPointRadius * 1.1f);
+                if (lastClickForRays != Vector3.zero) Gizmos.DrawLine(lastClickForRays, h);
+            }
+
+            if (lastRaySelected != null)
+            {
+                Gizmos.color = new Color(1f, 0.9f, 0.1f, 0.95f);
+                Gizmos.DrawWireSphere(lastRaySelected.position, debugPointRadius * 1.6f);
+                if (lastClickForRays != Vector3.zero) Gizmos.DrawLine(lastClickForRays, lastRaySelected.position);
+            }
         }
     }
 }
