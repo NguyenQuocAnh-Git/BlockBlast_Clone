@@ -445,6 +445,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   enableSmartSpawning: 1
+  enableLookahead: 1
+  lookaheadCandidateLimit: 12
+  lookaheadBeamWidth: 8
+  lookaheadPlacementsLimit: 6
 --- !u!4 &514234568
 Transform:
   m_ObjectHideFlags: 0
@@ -1011,17 +1015,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 34c5a8e69c203bc4689a57920e889f55, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  minObstacles: 20
-  maxObstacles: 35
-  obstacleDensity: 0.06
-  enableEasyMode: 0
-  createLinePatterns: 1
-  createRectanglePatterns: 0
-  createPerfectClearPatterns: 1
-  scoringPatternWeight: 0.7
-  useRandomPatterns: 0
-  useSymmetricPatterns: 0
-  useClusterPatterns: 0
 --- !u!4 &1491596885
 Transform:
   m_ObjectHideFlags: 0
