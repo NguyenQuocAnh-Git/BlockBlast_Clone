@@ -148,10 +148,20 @@ public class BlockSpawnController : MonoBehaviour
         float slotSpacing = (spawnAreaWorldWidth / 3f) + extraSpacing;
         float centerY = areaCenter.y + spawnAreaYOffset;
 
-        List<List<Vector2Int>> shapesToSpawn = new List<List<Vector2Int>>();
-        for (int i = 0; i < 3; i++)
+        List<List<Vector2Int>> shapesToSpawn = null;
+        var selector = FindObjectOfType<SmartBlockSelector>();
+        if (selector != null)
         {
-            shapesToSpawn.Add(TetrisShapes.GetRandomShapeWithRotation());
+            shapesToSpawn = selector.GetShapesToSpawn();
+        }
+        // Fallback to random variations if selector not present or returned nothing
+        if (shapesToSpawn == null || shapesToSpawn.Count == 0)
+        {
+            shapesToSpawn = new List<List<Vector2Int>>();
+            for (int i = 0; i < 3; i++)
+            {
+                shapesToSpawn.Add(TetrisShapes.GetRandomShapeWithRotation());
+            }
         }
 
         List<int> colorIndices = new List<int>();

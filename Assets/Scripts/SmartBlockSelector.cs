@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 
 /// <summary>
 /// Simplified SmartBlockSelector
@@ -11,7 +12,8 @@ public class SmartBlockSelector : MonoBehaviour
     [Header("Simplified Settings")]
     public bool useSmartSpawning = true;
     public bool prioritizeLargeBlocks = true;
-    public int minEmptyCellsForLargeBlockSelector = 10;
+    // tuned for 8x8 grid
+    public int minEmptyCellsForLargeBlockSelector = 6;
 
     // References
     private SmartBlockSpawner smartSpawner;
@@ -20,6 +22,8 @@ public class SmartBlockSelector : MonoBehaviour
 
     // Analyzer
     private UnifiedGridAnalyzer unifiedAnalyzer;
+
+    // No background analysis here — analysis is performed on-demand when spawn is requested.
 
     // Cache
     private List<List<Vector2Int>> _cachedShapes = new List<List<Vector2Int>>();
@@ -37,7 +41,8 @@ public class SmartBlockSelector : MonoBehaviour
 
     private void InitializeModularComponents()
     {
-        unifiedAnalyzer = new UnifiedGridAnalyzer(grid, 3, 6);
+        // For 8x8 grid, consider near-full lines when <=2 empty cells
+        unifiedAnalyzer = new UnifiedGridAnalyzer(grid, 2, 6);
     }
 
     public List<List<Vector2Int>> GetShapesToSpawn()
@@ -66,8 +71,8 @@ public class SmartBlockSelector : MonoBehaviour
 
             var shapes = new List<List<Vector2Int>>();
 
-            // If we have a smart spawner available, prefer it — it guarantees placeable shapes
-            if (useSmartSpawning && smartSpawner != null)
+            // Prefer smart spawner's lookahead selection when available and enabled.
+            if (useSmartSpawning && smartSpawner != null && smartSpawner.enableSmartSpawning)
             {
                 var smart = smartSpawner.GetSmartBlockList(3);
                 if (smart != null && smart.Count > 0)
@@ -77,18 +82,29 @@ public class SmartBlockSelector : MonoBehaviour
                 }
             }
 
-            if (prioritizeLargeBlocks && analysis.largeShapes.Count > 0 && emptyCells >= minEmptyCellsForLargeBlockSelector)
+            // Deterministic selection based on placeable shapes from analysis.
+            if (analysis.allPlaceableShapes != null && analysis.allPlaceableShapes.Count > 0)
             {
-                for (int i = 0; i < 3; i++)
-                    shapes.Add(analysis.largeShapes[i % analysis.largeShapes.Count]);
-            }
-            else if (analysis.totalNearFullLines >= 2 && analysis.allPlaceableShapes.Count > 0)
-            {
-                shapes.AddRange(analysis.allPlaceableShapes.GetRange(0, Mathf.Min(3, analysis.allPlaceableShapes.Count)));
+                // Choose up to 3 best placeable shapes, preferring larger shapes (deterministic).
+                var orderedPlaceable = analysis.allPlaceableShapes
+                    .OrderByDescending(s => ShapeDatabase.GetSize(s))
+                    .ThenByDescending(s => s.Count)
+                    .Take(3)
+                    .ToList();
+                shapes.AddRange(orderedPlaceable);
             }
             else
             {
-                for (int i = 0; i < 3; i++) shapes.Add(ShapeDatabase.GetRandomShapeVariation());
+                // As a last resort, pick first available variations from the precomputed database
+                // that fit the current emptyCells count (deterministic, no randomness).
+                int need = 3;
+                foreach (var v in ShapeDatabase.AllShapeVariations)
+                {
+                    if (v == null) continue;
+                    if (v.Count > emptyCells) continue;
+                    shapes.Add(TetrisShapes.NormalizeShape(v));
+                    if (shapes.Count >= 3) break;
+                }
             }
 
             CacheGeneratedShapes(shapes);
@@ -99,6 +115,8 @@ public class SmartBlockSelector : MonoBehaviour
             _isGeneratingShapes = false;
         }
     }
+
+    // No continuous coroutine; shapes generated on-demand when spawn is requested.
 
     private void CacheGeneratedShapes(List<List<Vector2Int>> shapes)
     {

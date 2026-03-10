@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections.Generic;
+using System.Linq;
 
 /// <summary>
 /// Pre-computed shape database to optimize performance
@@ -22,6 +23,12 @@ public static class ShapeDatabase
     // All possible shape variations (rotations + flips) for quick access
     public static readonly List<List<Vector2Int>> AllShapeVariations;
     
+    // Variations grouped by size for balanced sampling
+    public static readonly List<List<Vector2Int>> TinyVariations;
+    public static readonly List<List<Vector2Int>> SmallVariations;
+    public static readonly List<List<Vector2Int>> MediumVariations;
+    public static readonly List<List<Vector2Int>> LargeVariations;
+    
     static ShapeDatabase()
     {
         AllRotations = new Dictionary<int, List<List<Vector2Int>>>();
@@ -29,6 +36,10 @@ public static class ShapeDatabase
         ShapeSizes = new Dictionary<List<Vector2Int>, int>();
         ShapeClassifications = new Dictionary<List<Vector2Int>, BlockSize>();
         AllShapeVariations = new List<List<Vector2Int>>();
+        TinyVariations = new List<List<Vector2Int>>();
+        SmallVariations = new List<List<Vector2Int>>();
+        MediumVariations = new List<List<Vector2Int>>();
+        LargeVariations = new List<List<Vector2Int>>();
         
         PrecomputeAllShapeData();
     }
@@ -67,6 +78,7 @@ public static class ShapeDatabase
                     ShapeSizes[normalizedShape] = normalizedShape.Count;
                     ShapeClassifications[normalizedShape] = ClassifyShape(normalizedShape);
                     AllShapeVariations.Add(normalizedShape);
+                    AddToSizePool(normalizedShape);
                 }
                 
                 // Also generate flipped variations
@@ -79,6 +91,7 @@ public static class ShapeDatabase
                     ShapeSizes[horizontalFlip] = horizontalFlip.Count;
                     ShapeClassifications[horizontalFlip] = ClassifyShape(horizontalFlip);
                     AllShapeVariations.Add(horizontalFlip);
+                    AddToSizePool(horizontalFlip);
                 }
                 
                 if (!ShapeBounds.ContainsKey(verticalFlip))
@@ -87,6 +100,7 @@ public static class ShapeDatabase
                     ShapeSizes[verticalFlip] = verticalFlip.Count;
                     ShapeClassifications[verticalFlip] = ClassifyShape(verticalFlip);
                     AllShapeVariations.Add(verticalFlip);
+                    AddToSizePool(verticalFlip);
                 }
             }
             
@@ -94,6 +108,26 @@ public static class ShapeDatabase
         }
     }
     
+    private static void AddToSizePool(List<Vector2Int> shape)
+    {
+        var cls = ClassifyShape(shape);
+        switch (cls)
+        {
+            case BlockSize.Tiny:
+                TinyVariations.Add(shape);
+                break;
+            case BlockSize.Small:
+                SmallVariations.Add(shape);
+                break;
+            case BlockSize.Medium:
+                MediumVariations.Add(shape);
+                break;
+            case BlockSize.Large:
+                LargeVariations.Add(shape);
+                break;
+        }
+    }
+
     /// <summary>
     /// Calculate bounds for a shape
     /// </summary>
@@ -173,11 +207,26 @@ public static class ShapeDatabase
     /// </summary>
     public static List<Vector2Int> GetRandomShapeVariation()
     {
-        if (AllShapeVariations.Count == 0)
+        // Weighted sampling to prefer Medium/Large shapes to avoid over-representation of tiny/small variants.
+        // Weights (tunable): Large 0.45, Medium 0.35, Small 0.15, Tiny 0.05
+        float r = Random.value;
+        List<List<Vector2Int>> pool = null;
+
+        if (r < 0.45f && LargeVariations.Count > 0)
+            pool = LargeVariations;
+        else if (r < 0.45f + 0.35f && MediumVariations.Count > 0)
+            pool = MediumVariations;
+        else if (r < 0.45f + 0.35f + 0.15f && SmallVariations.Count > 0)
+            pool = SmallVariations;
+        else if (TinyVariations.Count > 0)
+            pool = TinyVariations;
+        else if (AllShapeVariations.Count > 0)
+            pool = AllShapeVariations;
+        else
             return new List<Vector2Int>();
-        
-        int randomIndex = Random.Range(0, AllShapeVariations.Count);
-        return new List<Vector2Int>(AllShapeVariations[randomIndex]);
+
+        int idx = Random.Range(0, pool.Count);
+        return new List<Vector2Int>(pool[idx]);
     }
     
     /// <summary>

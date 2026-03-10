@@ -96,7 +96,21 @@ public class UnifiedGridAnalyzer
         foreach (var shape in ShapeDatabase.AllShapeVariations)
         {
             if (added >= maxShapes) break;
-            if (CanPlaceAnywhere(shape, gridSize))
+            if (shape == null) continue;
+            // Compute bounding box to limit anchor search (optimized for fixed small grid)
+            int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+            foreach (var p in shape)
+            {
+                minX = Mathf.Min(minX, p.x);
+                minY = Mathf.Min(minY, p.y);
+                maxX = Mathf.Max(maxX, p.x);
+                maxY = Mathf.Max(maxY, p.y);
+            }
+            int width = maxX - minX + 1;
+            int height = maxY - minY + 1;
+            if (width > gridSize || height > gridSize) continue;
+
+            if (CanPlaceAnywhere(shape, gridSize, width, height))
             {
                 placeable.Add(shape);
                 added++;
@@ -105,19 +119,43 @@ public class UnifiedGridAnalyzer
         // Fallback: ensure at least 3 shapes
         while (placeable.Count < 3)
         {
-            placeable.Add(ShapeDatabase.GetRandomShapeVariation());
+            // Deterministic fallback: take next shape variation that can fit
+            foreach (var v in ShapeDatabase.AllShapeVariations)
+            {
+                if (v == null) continue;
+                if (placeable.Contains(v)) continue;
+                // check bounding box quickly
+                int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+                foreach (var p in v)
+                {
+                    minX = Mathf.Min(minX, p.x);
+                    minY = Mathf.Min(minY, p.y);
+                    maxX = Mathf.Max(maxX, p.x);
+                    maxY = Mathf.Max(maxY, p.y);
+                }
+                int width = maxX - minX + 1;
+                int height = maxY - minY + 1;
+                if (width <= gridSize && height <= gridSize)
+                {
+                    placeable.Add(v);
+                    break;
+                }
+            }
         }
 
         return placeable;
     }
 
-    private bool CanPlaceAnywhere(List<Vector2Int> shape, int gridSize)
+    // Optimized CanPlaceAnywhere that uses bounding box dimensions to limit anchor search.
+    private bool CanPlaceAnywhere(List<Vector2Int> shape, int gridSize, int width, int height)
     {
-        for (int x = -4; x < gridSize + 4; x++)
+        int maxX = gridSize - width;
+        int maxY = gridSize - height;
+        for (int ax = 0; ax <= maxX; ax++)
         {
-            for (int y = -4; y < gridSize + 4; y++)
+            for (int ay = 0; ay <= maxY; ay++)
             {
-                if (CanPlaceAt(shape, x, y, gridSize)) return true;
+                if (CanPlaceAt(shape, ax, ay, gridSize)) return true;
             }
         }
         return false;
