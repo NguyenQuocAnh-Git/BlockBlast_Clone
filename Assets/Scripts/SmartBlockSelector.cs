@@ -82,16 +82,56 @@ public class SmartBlockSelector : MonoBehaviour
                 }
             }
 
-            // Deterministic selection based on placeable shapes from analysis.
+            // Deterministic selection enhanced: prefer shapes that can fill critical gaps
             if (analysis.allPlaceableShapes != null && analysis.allPlaceableShapes.Count > 0)
             {
-                // Choose up to 3 best placeable shapes, preferring larger shapes (deterministic).
-                var orderedPlaceable = analysis.allPlaceableShapes
+                var prioritized = new List<List<Vector2Int>>();
+                var remainingPlaceable = new List<List<Vector2Int>>(analysis.allPlaceableShapes);
+
+                // If there are critical gaps (cells in near-full lines), find shapes that can cover them.
+                if (analysis.criticalGaps != null && analysis.criticalGaps.Count > 0)
+                {
+                    foreach (var shape in analysis.allPlaceableShapes)
+                    {
+                        if (prioritized.Count >= 3) break;
+                        var bd = new BlockData(shape);
+                        bool covers = false;
+                        foreach (var gap in analysis.criticalGaps)
+                        {
+                            foreach (var cell in shape)
+                            {
+                                int ax = gap.x - cell.x;
+                                int ay = gap.y - cell.y;
+                                if (ax < 0 || ay < 0 || ax >= gridSize || ay >= gridSize) continue;
+                                if (grid != null && grid.CanPlace(bd, ax, ay))
+                                {
+                                    covers = true;
+                                    break;
+                                }
+                            }
+                            if (covers) break;
+                        }
+                        if (covers)
+                        {
+                            prioritized.Add(shape);
+                            remainingPlaceable.Remove(shape);
+                        }
+                    }
+                }
+
+                // Fill remaining slots deterministically preferring larger shapes
+                var orderedPlaceable = remainingPlaceable
                     .OrderByDescending(s => ShapeDatabase.GetSize(s))
                     .ThenByDescending(s => s.Count)
-                    .Take(3)
                     .ToList();
-                shapes.AddRange(orderedPlaceable);
+
+                foreach (var s in orderedPlaceable)
+                {
+                    if (prioritized.Count >= 3) break;
+                    prioritized.Add(s);
+                }
+
+                shapes.AddRange(prioritized.Take(3));
             }
             else
             {
