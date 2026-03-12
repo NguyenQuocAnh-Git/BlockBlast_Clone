@@ -446,9 +446,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   enableSmartSpawning: 1
   enableLookahead: 1
-  lookaheadCandidateLimit: 12
+  lookaheadCandidateLimit: 16
   lookaheadBeamWidth: 8
-  lookaheadPlacementsLimit: 6
+  lookaheadPlacementsLimit: 8
 --- !u!4 &514234568
 Transform:
   m_ObjectHideFlags: 0
@@ -1808,7 +1808,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   useSmartSpawning: 1
   prioritizeLargeBlocks: 1
-  minEmptyCellsForLargeBlockSelector: 10
+  minEmptyCellsForLargeBlockSelector: 6
+  clearPriority: 1.2
+  sizePriority: 0.4
+  randomness: 0.25
+  recentHistorySize: 4
+  recentTripletHistorySize: 4
+  tripletRepeatThreshold: 2
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
