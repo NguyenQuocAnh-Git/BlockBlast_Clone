@@ -67,18 +67,22 @@ public class GridView : MonoBehaviour
         return gridData[x, y] == 1;
     }
 
-    void Start()
+    // Ensure grid data and renderers are ready before other components' Start() runs.
+    void Awake()
     {
         gridData = new int[gridSize, gridSize];
         renderers = new SpriteRenderer[gridSize, gridSize];
         highlightState = new bool[gridSize, gridSize];
         cellColors = new Color[gridSize, gridSize];
 
-        cellWorldSize = gridSprite.bounds.size.x;
+        cellWorldSize = gridSprite != null ? gridSprite.bounds.size.x : 1f;
 
         BuildGrid();
         FitToScreen();
-        
+    }
+
+    void Start()
+    {
         // Initialize particle effect manager if not assigned
         if (particleEffectManager == null)
         {
@@ -88,14 +92,7 @@ public class GridView : MonoBehaviour
                 GameObject particleManagerObj = new GameObject("ParticleEffectManager");
                 particleEffectManager = particleManagerObj.AddComponent<ParticleEffectManager>();
             }
-            else
-            {
-            }
         }
-        else
-        {
-        }
-        
     }
 
     void BuildGrid()
@@ -268,6 +265,76 @@ public class GridView : MonoBehaviour
                     highlightState[x, y] = false;
                 }
             }
+        }
+    }
+
+    // Highlight cells that would be cleared by placing a block: keep base color but increase brightness/value.
+    public void HighlightPotentialClears(List<int> rows, List<int> cols, float lightnessIncrease = 0.5f)
+    {
+        if (rows == null && cols == null) return;
+        // First clear previous highlights
+        ClearAllHighlights();
+
+        for (int x = 0; x < gridSize; x++)
+        {
+            for (int y = 0; y < gridSize; y++)
+            {
+                bool shouldHighlight = (rows != null && rows.Contains(y)) || (cols != null && cols.Contains(x));
+                if (!shouldHighlight) continue;
+                // Keep stored base color and increase brightness using HSV
+                Color baseCol = cellColors[x, y];
+                Color.RGBToHSV(baseCol, out float h, out float s, out float v);
+                v = Mathf.Clamp01(v + lightnessIncrease);
+                Color brighter = Color.HSVToRGB(h, s, v);
+                renderers[x, y].color = brighter;
+                highlightState[x, y] = true;
+            }
+        }
+    }
+
+    // Compute which rows/cols would become full if block is placed at (ax,ay).
+    public void GetPotentialClearedLines(BlockData block, int ax, int ay, out List<int> rowsToClear, out List<int> colsToClear)
+    {
+        rowsToClear = new List<int>();
+        colsToClear = new List<int>();
+        if (block == null) return;
+
+        // Create a temporary occupancy map (bool) representing current + block placement
+        bool[,] occ = new bool[gridSize, gridSize];
+        for (int x = 0; x < gridSize; x++)
+            for (int y = 0; y < gridSize; y++)
+                occ[x, y] = (gridData[x, y] == 1);
+
+        for (int i = 0; i < 5; i++)
+            for (int j = 0; j < 5; j++)
+                if (block.mask[i, j] == 1)
+                {
+                    int gx = ax + i;
+                    int gy = ay + j;
+                    if (gx >= 0 && gx < gridSize && gy >= 0 && gy < gridSize)
+                        occ[gx, gy] = true;
+                }
+
+        // Check rows
+        for (int y = 0; y < gridSize; y++)
+        {
+            bool full = true;
+            for (int x = 0; x < gridSize; x++)
+            {
+                if (!occ[x, y]) { full = false; break; }
+            }
+            if (full) rowsToClear.Add(y);
+        }
+
+        // Check cols
+        for (int x = 0; x < gridSize; x++)
+        {
+            bool full = true;
+            for (int y = 0; y < gridSize; y++)
+            {
+                if (!occ[x, y]) { full = false; break; }
+            }
+            if (full) colsToClear.Add(x);
         }
     }
 

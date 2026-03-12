@@ -423,6 +423,22 @@ public class DragBlockController : MonoBehaviour
         ghostParent.transform.position = grid.GetAnchorWorldPosition(anchor.x, anchor.y);
         currentGhostAnchor = anchor;
 
+        // Determine which rows/cols would be cleared by this placement.
+        List<int> rows = null;
+        List<int> cols = null;
+        if (grid != null && blockData != null)
+        {
+            grid.GetPotentialClearedLines(blockData, anchor.x, anchor.y, out rows, out cols);
+            if ((rows != null && rows.Count > 0) || (cols != null && cols.Count > 0))
+            {
+                grid.HighlightPotentialClears(rows, cols, 0.5f);
+            }
+            else
+            {
+                grid.ClearAllHighlights();
+            }
+        }
+
         float disp = GetDisplayedCellWorldSize();
         Sprite sprite = spawnController != null ? spawnController.cellSprite : null;
         float baseSize = (sprite != null) ? sprite.bounds.size.x : 1f;
@@ -437,9 +453,29 @@ public class DragBlockController : MonoBehaviour
                     c.transform.localPosition = new Vector3(i * disp, j * disp, 0);
                     var sr = c.AddComponent<SpriteRenderer>();
                     sr.sprite = sprite;
+                    // Default ghost color (semi-transparent)
                     Color col = blockColor;
                     col.a = 0.45f;
-                    sr.color = col;
+
+                    // If this ghost cell lies on a row/col that would be cleared, brighten it.
+                    int gx = anchor.x + i;
+                    int gy = anchor.y + j;
+                    bool onClearRow = (cols != null && cols.Contains(gx));
+                    bool onClearCol = (rows != null && rows.Contains(gy));
+                    if (onClearRow || onClearCol)
+                    {
+                        // Increase brightness/value using HSV, clamp to 1
+                        Color.RGBToHSV(col, out float h2, out float s2, out float v2);
+                        v2 = Mathf.Clamp01(v2 + 0.5f);
+                        Color brighter = Color.HSVToRGB(h2, s2, v2);
+                        brighter.a = col.a;
+                        sr.color = brighter;
+                    }
+                    else
+                    {
+                        sr.color = col;
+                    }
+
                     sr.sortingOrder = 2;
                     c.transform.localScale = Vector3.one * scale;
                 }
@@ -453,6 +489,8 @@ public class DragBlockController : MonoBehaviour
             Destroy(ghostParent);
             ghostParent = null;
         }
+        // Clear any potential line highlights when ghost is removed
+        if (grid != null) grid.ClearAllHighlights();
     }
 
     // Compute centroid of the shape in mask-local coordinates (0..4)
